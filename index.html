@@ -84,8 +84,17 @@ button{font:inherit;cursor:pointer}
 .again{background:#fff1ee;color:var(--again);border:1px solid #dfb8ae}
 .good{background:var(--good);color:white}
 .listen{background:var(--sky);color:var(--navy);border:1px solid var(--line)}
-.slow{background:white;color:var(--navy);border:1px solid var(--line)}
+.examples{background:white;color:var(--navy);border:1px solid var(--line)}
 .pause{background:white;color:var(--muted);border:1px solid #d8e0e9;grid-column:1/-1}
+.example-box{
+  margin-top:16px;width:100%;padding:12px 14px;background:#f8fbff;
+  border:1px solid #d5e7f7;border-radius:14px;text-align:left
+}
+.example-label{
+  font-size:11px;text-transform:uppercase;letter-spacing:.07em;
+  color:var(--muted);font-weight:850;margin-bottom:5px
+}
+.example-text{font-size:17px;line-height:1.35;font-weight:650;color:var(--text)}
 .progress{
   height:7px;background:#e4ebf3;border-radius:999px;overflow:hidden;margin:13px 0 0
 }
@@ -148,6 +157,10 @@ button{font:inherit;cursor:pointer}
       <div class="sentence" id="sentence"></div>
       <div class="level" id="level">Stage 0 / 5 · New</div>
       <div class="hint" id="hint">Say the English sentence before you reveal it.</div>
+      <div class="example-box hidden" id="exampleBox">
+        <div class="example-label" id="exampleLabel">Example</div>
+        <div class="example-text" id="exampleText"></div>
+      </div>
     </div>
 
     <div class="controls">
@@ -155,7 +168,7 @@ button{font:inherit;cursor:pointer}
       <button class="action again hidden" id="againBtn">↻ Again · −1 stage</button>
       <button class="action good hidden" id="goodBtn">✓ Got it · +1 stage</button>
       <button class="action listen hidden" id="listenBtn">🔊 Listen</button>
-      <button class="action slow hidden" id="slowBtn">🐢 Slow</button>
+      <button class="action examples hidden" id="examplesBtn">💬 More examples</button>
       <button class="action pause" id="pauseBtn">Pause</button>
     </div>
     <div class="progress"><div id="progressBar"></div></div>
@@ -182,7 +195,7 @@ button{font:inherit;cursor:pointer}
   const SESSION_SECONDS=15*60;
   const ALL=[...(window.CORE_CARDS||[]),...(window.COURSE_CARDS||[])];
   const $=id=>document.getElementById(id);
-  let state, section="today", setId=null, queue=[], current=null, flipped=false;
+  let state, section="today", setId=null, queue=[], current=null, flipped=false, exampleIndex=0;
   let remaining=SESSION_SECONDS, timerId=null, paused=false, sessionSeen=0, sessionGood=0;
 
   const stageNames=["New","Familiar","Remembered","Solid","Fluent","Automatic"];
@@ -255,7 +268,9 @@ button{font:inherit;cursor:pointer}
     $("againBtn").classList.add("hidden");
     $("goodBtn").classList.add("hidden");
     $("listenBtn").classList.add("hidden");
-    $("slowBtn").classList.add("hidden");
+    $("examplesBtn").classList.add("hidden");
+    $("exampleBox").classList.add("hidden");
+    exampleIndex=0;
   }
   function reveal(){
     if(!current)return;
@@ -267,7 +282,13 @@ button{font:inherit;cursor:pointer}
     $("againBtn").classList.remove("hidden");
     $("goodBtn").classList.remove("hidden");
     $("listenBtn").classList.remove("hidden");
-    $("slowBtn").classList.remove("hidden");
+    if(current.examples && current.examples.length){
+      $("examplesBtn").classList.remove("hidden");
+    }else{
+      $("examplesBtn").classList.add("hidden");
+    }
+    $("exampleBox").classList.add("hidden");
+    exampleIndex=0;
   }
   function rate(good){
     if(!current||!flipped)return;
@@ -285,17 +306,44 @@ button{font:inherit;cursor:pointer}
     }
     save(); updateStats(); showNext();
   }
-  function speak(rate=0.9){
-    if(!current||!("speechSynthesis" in window))return;
-    speechSynthesis.cancel();
-    const u=new SpeechSynthesisUtterance(current.en);
-    u.lang="en-GB"; u.rate=rate;
+  function preferredVoice(){
     const voices=speechSynthesis.getVoices();
-    const preferred=voices.find(v=>/^en-GB/i.test(v.lang)&&/Serena|Daniel|Kate|Oliver|Arthur/i.test(v.name))
-      || voices.find(v=>/^en-GB/i.test(v.lang)) || voices.find(v=>/^en(-|_)/i.test(v.lang));
-    if(preferred)u.voice=preferred;
+    return voices.find(v=>/^en-GB/i.test(v.lang)&&/Daniel|Serena|Kate|Oliver|Arthur/i.test(v.name))
+      || voices.find(v=>/^en-GB/i.test(v.lang))
+      || voices.find(v=>/^en(-|_)/i.test(v.lang));
+  }
+
+  function speakText(text){
+    if(!text || !("speechSynthesis" in window)) return;
+    speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(text);
+    u.lang="en-GB";
+    u.rate=0.95;
+    u.pitch=1;
+    const voice=preferredVoice();
+    if(voice) u.voice=voice;
     speechSynthesis.speak(u);
   }
+
+  function speak(){
+    if(!current) return;
+    speakText(current.en);
+  }
+
+  function playNextExample(){
+    if(!current || !current.examples || !current.examples.length) return;
+
+    const text=current.examples[exampleIndex % current.examples.length];
+    const number=(exampleIndex % current.examples.length)+1;
+
+    $("exampleLabel").textContent=`Spoken example ${number} of ${current.examples.length}`;
+    $("exampleText").textContent=text;
+    $("exampleBox").classList.remove("hidden");
+
+    speakText(text);
+    exampleIndex=(exampleIndex+1)%current.examples.length;
+  }
+
   function setsFor(sec){
     const map=new Map();
     ALL.filter(c=>c.section===sec).forEach(c=>map.set(c.set,c.setName));
@@ -370,8 +418,8 @@ button{font:inherit;cursor:pointer}
   $("card").onclick=()=>{if(!flipped)reveal()};
   $("againBtn").onclick=()=>rate(false);
   $("goodBtn").onclick=()=>rate(true);
-  $("listenBtn").onclick=()=>speak(.9);
-  $("slowBtn").onclick=()=>speak(.75);
+  $("listenBtn").onclick=speak;
+  $("examplesBtn").onclick=playNextExample;
   $("pauseBtn").onclick=()=>{
     paused=!paused;
     $("pauseBtn").textContent=paused?"Resume":"Pause";

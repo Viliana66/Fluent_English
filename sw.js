@@ -1,4 +1,4 @@
-const CACHE="fluent-english-v1";
+const CACHE="fluent-english-v2";
 const ASSETS=["./","./index.html","./content.js","./course.js","./manifest.webmanifest"];
 
 self.addEventListener("install",event=>{
