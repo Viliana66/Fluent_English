@@ -115,6 +115,23 @@ button{font:inherit;cursor:pointer}
   .sentence{font-size:26px}
   .card{min-height:310px;padding:22px 16px}
 }
+
+.course-select{
+  width:100%;border:1.5px solid var(--blue);background:white;color:var(--navy);
+  border-radius:12px;padding:10px 12px;font-size:14px;font-weight:750
+}
+.course-note{
+  background:#f2f8ff;border:1px solid #b9d8f4;border-radius:16px;
+  padding:14px 15px;margin:0 0 12px;color:var(--text)
+}
+.course-note-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.course-module{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:850}
+.course-title{font-size:17px;font-weight:850;color:var(--navy);margin-top:3px}
+.course-link{font-size:12px;color:var(--blue);font-weight:800;text-decoration:none;white-space:nowrap}
+.course-theory,.course-tip{font-size:13px;line-height:1.42;margin-top:10px}
+.course-tip{color:#405269}
+.course-time{font-size:11px;color:var(--muted);margin-top:10px;font-weight:750}
+
 </style>
 </head>
 <body>
@@ -136,6 +153,19 @@ button{font:inherit;cursor:pointer}
 
   <div class="submenu hidden" id="submenu"></div>
   <div class="scope-title" id="scopeTitle">Today · mixed practice</div>
+
+  <div class="course-note hidden" id="courseNote">
+    <div class="course-note-top">
+      <div>
+        <div class="course-module" id="courseModule">Module 2</div>
+        <div class="course-title" id="courseTitle"></div>
+      </div>
+      <a class="course-link" id="courseLink" href="#" target="_blank" rel="noopener">Original lesson ↗</a>
+    </div>
+    <div class="course-theory"><b>Quick theory:</b> <span id="courseTheory"></span></div>
+    <div class="course-tip"><b>Focus:</b> <span id="courseTip"></span></div>
+    <div class="course-time">3 active exercises · about 2–4 minutes</div>
+  </div>
 
   <div id="studyArea">
     <div class="stats">
@@ -223,7 +253,7 @@ button{font:inherit;cursor:pointer}
     }catch(e){return text}
   }
   function scopeCards(){
-    if(section==="today") return ALL;
+    if(section==="today") return ALL.filter(c=>c.section!=="course");
     if(section==="course"){
       if(!setId) return ALL.filter(c=>c.section==="course");
       return ALL.filter(c=>c.section==="course"&&c.set===setId);
@@ -240,7 +270,7 @@ button{font:inherit;cursor:pointer}
     });
     due.sort((a,b)=>cardState(a.id).due-cardState(b.id).due);
     queue=due.concat(fresh).slice(0,25);
-    if(!queue.length){
+    if(!queue.length && !(section==="course" && setId)){
       queue=cards.slice().sort((a,b)=>cardState(a.id).stage-cardState(b.id).stage).slice(0,20);
     }
   }
@@ -260,10 +290,18 @@ button{font:inherit;cursor:pointer}
     if(!queue.length){finish();return}
     current=queue.shift(); flipped=false;
     const s=cardState(current.id);
-    $("label").textContent="Bulgarian · Speak aloud";
-    $("sentence").innerHTML=highlight(current.bg,current.focusBg);
+
+    if(section==="course" && current.prompt){
+      $("label").textContent=(current.taskLabel||"Course practice")+" · Say the answer aloud";
+      $("sentence").textContent=current.prompt;
+      $("hint").textContent="Build the answer before you reveal it.";
+    }else{
+      $("label").textContent="Bulgarian · Speak aloud";
+      $("sentence").innerHTML=highlight(current.bg,current.focusBg);
+      $("hint").textContent="Say the English sentence before you reveal it.";
+    }
+
     $("level").textContent=stageLabel(s.stage);
-    $("hint").textContent="Say the English sentence before you reveal it.";
     $("revealBtn").classList.remove("hidden");
     $("againBtn").classList.add("hidden");
     $("goodBtn").classList.add("hidden");
@@ -275,9 +313,15 @@ button{font:inherit;cursor:pointer}
   function reveal(){
     if(!current)return;
     flipped=true;
-    $("label").textContent="English · Listen and repeat twice";
+    $("label").textContent=
+      section==="course"
+        ? "Answer · Listen and repeat"
+        : "English · Listen and repeat twice";
     $("sentence").innerHTML=highlight(current.en,current.focusEn);
-    $("hint").textContent="Listen once, then say the whole sentence twice.";
+    $("hint").textContent=
+      section==="course"
+        ? "Say it once more naturally, then rate yourself."
+        : "Listen once, then say the whole sentence twice.";
     $("revealBtn").classList.add("hidden");
     $("againBtn").classList.remove("hidden");
     $("goodBtn").classList.remove("hidden");
@@ -304,7 +348,10 @@ button{font:inherit;cursor:pointer}
       s.due=now()+5*60*1000;
       queue.splice(Math.min(3,queue.length),0,current);
     }
-    save(); updateStats(); showNext();
+    save();
+    updateStats();
+    if(section==="course") renderSubmenu();
+    showNext();
   }
   function preferredVoice(){
     const voices=speechSynthesis.getVoices();
@@ -350,38 +397,109 @@ button{font:inherit;cursor:pointer}
     return [...map.entries()];
   }
   function renderSubmenu(){
-    const sub=$("submenu"); sub.innerHTML="";
-    if(section==="today"){sub.classList.add("hidden");return}
+    const sub=$("submenu");
+    sub.innerHTML="";
+
+    if(section==="today"){
+      sub.classList.add("hidden");
+      return;
+    }
+
     const sets=setsFor(section);
-    if(!sets.length){sub.classList.add("hidden");return}
+    if(!sets.length){
+      sub.classList.add("hidden");
+      return;
+    }
+
     sub.classList.remove("hidden");
+
+    if(section==="course"){
+      const select=document.createElement("select");
+      select.className="course-select";
+      select.setAttribute("aria-label","Choose course lesson");
+
+      sets.forEach(([id,name])=>{
+        const meta=(window.COURSE_META||{})[id];
+        const option=document.createElement("option");
+        option.value=id;
+        if(meta){
+          const lessonCards=ALL.filter(c=>c.section==="course"&&c.set===id);
+          const done=lessonCards.filter(c=>cardState(c.id).seen>0).length;
+          const marker=done===lessonCards.length && lessonCards.length ? "✓ " : done>0 ? "• " : "";
+          option.textContent=`${marker}Lesson ${String(meta.lesson).padStart(2,"0")} · ${meta.titleEn}`;
+        }else{
+          option.textContent=name;
+        }
+        option.selected=setId===id;
+        select.appendChild(option);
+      });
+
+      select.onchange=()=>{
+        setId=select.value;
+        updateScope();
+      };
+
+      sub.appendChild(select);
+      return;
+    }
+
     sets.forEach(([id,name])=>{
       const b=document.createElement("button");
       b.className="subbtn"+(setId===id?" active":"");
       b.textContent=name;
-      b.onclick=()=>{setId=id;renderSubmenu();updateScope();};
+      b.onclick=()=>{
+        setId=id;
+        renderSubmenu();
+        updateScope();
+      };
       sub.appendChild(b);
     });
   }
+
   function updateScope(){
     $("courseEmpty").classList.add("hidden");
     $("studyArea").classList.remove("hidden");
     $("end").classList.add("hidden");
+    $("courseNote").classList.add("hidden");
+
     if(section==="today"){
       $("scopeTitle").textContent="Today · due cards + new speaking practice";
     }else if(setId){
       const first=ALL.find(c=>c.section===section&&c.set===setId);
-      $("scopeTitle").textContent=(section==="course"?"Course":"")+ (section==="course"?" · ":"") +(first?.setName||"");
+
+      if(section==="course"){
+        const meta=(window.COURSE_META||{})[setId];
+        $("scopeTitle").textContent="Course · Module 2";
+
+        if(meta){
+          $("courseModule").textContent=meta.module;
+          $("courseTitle").textContent=`Lesson ${meta.lesson} · ${meta.titleEn}`;
+          $("courseTheory").textContent=meta.note;
+          $("courseTip").textContent=meta.tip;
+          $("courseLink").href=meta.url;
+          $("courseNote").classList.remove("hidden");
+        }
+      }else{
+        $("scopeTitle").textContent=first?.setName||"";
+      }
     }else{
-      $("scopeTitle").textContent=section==="situations"?"Situations":section==="patterns"?"Patterns":"Course";
+      $("scopeTitle").textContent=
+        section==="situations" ? "Situations" :
+        section==="patterns" ? "Patterns" : "Course";
     }
+
     if(section==="course" && !scopeCards().length){
       $("studyArea").classList.add("hidden");
       $("courseEmpty").classList.remove("hidden");
       return;
     }
-    buildQueue();updateStats();showNext();
+
+    queue=[];
+    buildQueue();
+    updateStats();
+    showNext();
   }
+
   function selectSection(sec){
     section=sec;setId=null;
     document.querySelectorAll(".topbtn").forEach(b=>b.classList.toggle("active",b.dataset.section===sec));
@@ -411,7 +529,10 @@ button{font:inherit;cursor:pointer}
     clearInterval(timerId);
     $("studyArea").classList.add("hidden");
     $("end").classList.remove("hidden");
-    $("endText").textContent=`You practised ${sessionSeen} phrases and got ${sessionGood} right.`;
+    $("endText").textContent=
+      section==="course"
+        ? `Lesson practice complete: ${sessionSeen} phrases.`
+        : `You practised ${sessionSeen} phrases and got ${sessionGood} right.`;
   }
   document.querySelectorAll(".topbtn").forEach(b=>b.onclick=()=>selectSection(b.dataset.section));
   $("revealBtn").onclick=reveal;
